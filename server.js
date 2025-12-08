@@ -240,6 +240,4 @@ io.on("connection", (sock) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () =>
-  console.log("서버 실행 중:", PORT, "origin:", ALLOW_ORIGIN)
-);
+server.listen(PORT, () => console.log("서버 실행 중:", PORT, ORIGINS));
