@@ -51,7 +51,7 @@ const ROUND_SEC = 90;
 const LEVELS = {
   1: {
     // 클라이언트의 public/assets/ 폴더에 이미지가 있어야 합니다.
-    image: "/assets/farm_twins_cropped.jpg",
+    image: "/assets/farm_twins_cropped.png",
     base: { w: 1024, h: 500 }, // 이미지 비율에 맞춰 h값은 조정될 수 있음
 
     // id: 고유번호, nx: 가로위치(%), ny: 세로위치(%), nr: 판정반경(%)
