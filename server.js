@@ -1,30 +1,40 @@
+// server.js
 const http = require("http");
-const server = http.createServer();
+
+// 간단 헬스체크(Port 감지 & 상태확인)
+const server = http.createServer((req, res) => {
+  if (req.url === "/healthz") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    return res.end("ok");
+  }
+  if (req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    return res.end("socket server");
+  }
+  res.writeHead(404);
+  res.end("not found");
+});
 
 const { Server } = require("socket.io");
+
+// ORIGIN 예: "https://webrtcproject1.netlify.app, http://localhost:5173"
 const ORIGINS = (process.env.ORIGIN || "*")
   .split(",")
-  .map((s) => s.trim().replace(/\/$/, "")); // ← 끝 슬래시 제거
-
+  .map((s) => s.trim().replace(/\/$/, "")); // 끝 슬래시 제거
 console.log("[ALLOW ORIGINS]", ORIGINS);
 
 const io = new Server(server, {
   cors: {
-    // Socket.IO는 폴링(xhr)에서도 이 콜백을 사용한다.
-    origin(origin, callback) {
+    origin(origin, cb) {
       const clean = (origin || "").replace(/\/$/, "");
       const allowed =
-        !origin || // 서버 내부 / curl 등의 Origin 없음
-        ORIGINS.includes("*") ||
-        ORIGINS.includes(clean);
-
+        !origin || ORIGINS.includes("*") || ORIGINS.includes(clean);
       if (allowed) {
         if (origin) console.log("[CORS OK]", clean);
-        return callback(null, true);
+        return cb(null, true);
       }
-
-      console.log("[CORS BLOCK]", origin);
-      return callback(new Error("CORS blocked: " + origin));
+      console.log("[CORS BLOCK]", { origin, ORIGINS });
+      cb(new Error("CORS blocked: " + origin));
     },
     methods: ["GET", "POST"],
     credentials: false,
@@ -34,7 +44,7 @@ const io = new Server(server, {
 // ===== 라운드 시간(초) =====
 const ROUND_SEC = 90;
 
-// ---- 레벨 데이터(예시: 3번에서 분리한 좌/우 패널) ----
+// ---- 레벨 데이터(예시) ----
 const LEVELS = {
   1: {
     left: "/assets/level1_left.png",
@@ -82,8 +92,7 @@ function computeWinners(scoresObj) {
 
 function endRound(roomId, reason = "timeout") {
   const room = rooms.get(roomId);
-  if (!room) return;
-  if (!room.started) return;
+  if (!room || !room.started) return;
 
   const scoresObj = Object.fromEntries(room.scores);
   const winners = computeWinners(scoresObj);
@@ -96,7 +105,6 @@ function endRound(roomId, reason = "timeout") {
     endedAt: Date.now(),
   });
 
-  // 타이머 정리 및 상태 리셋
   clearTimeout(room.timer);
   room.timer = null;
   room.ready.clear();
@@ -123,7 +131,6 @@ io.on("connection", (sock) => {
     }
     const room = rooms.get(roomId);
 
-    // 정원 2명
     if (room.players.size >= 2) {
       sock.emit("room-full", { roomId });
       return;
@@ -160,14 +167,13 @@ io.on("connection", (sock) => {
       const payload = LEVELS[level];
       const seed = Date.now();
       const startsAt = Date.now() + 1500;
-      const endsAt = startsAt + ROUND_SEC * 1000; // ★ 라운드 시간
+      const endsAt = startsAt + ROUND_SEC * 1000;
 
       room.spotsData = payload.spots;
       const total = new Set(payload.spots.map((s) => s.id)).size;
       room.total = total;
       room.endsAt = endsAt;
 
-      // ★ 타임아웃으로 자동 종료
       clearTimeout(room.timer);
       room.timer = setTimeout(
         () => endRound(roomId, "timeout"),
@@ -179,7 +185,7 @@ io.on("connection", (sock) => {
         level,
         seed,
         startsAt,
-        endsAt, // ★ endsAt 포함
+        endsAt,
         images: { left: payload.left, right: payload.right },
         base: { w: payload.base_w, h: payload.base_h },
         spots: payload.spots,
@@ -211,7 +217,6 @@ io.on("connection", (sock) => {
       scores: Object.fromEntries(room.scores),
     });
 
-    // 모든 정답이 잠기면 즉시 종료
     if (room.locked.size >= (room.total || 0)) {
       endRound(roomId, "all-locked");
     }
@@ -227,7 +232,6 @@ io.on("connection", (sock) => {
           .to(roomId)
           .emit("peer-left", { peerId: sock.id, roster: rosterObj(room) });
 
-        // 플레이 중에 나갔으면 라운드 종료
         if (room.started) endRound(roomId, "peer-left");
 
         if (room.players.size === 0) {
@@ -240,4 +244,7 @@ io.on("connection", (sock) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log("서버 실행 중:", PORT, ORIGINS));
+// Render가 포트 감지하도록 0.0.0.0 바인딩
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("서버 실행 중:", PORT);
+});
