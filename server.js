@@ -2,8 +2,34 @@ const http = require("http");
 const server = http.createServer();
 
 const { Server } = require("socket.io");
-const ALLOW_ORIGIN = process.env.ORIGIN || "*";
-const io = new Server(server, { cors: { origin: ALLOW_ORIGIN } });
+const ORIGINS = (process.env.ORIGIN || "*")
+  .split(",")
+  .map((s) => s.trim().replace(/\/$/, "")); // ← 끝 슬래시 제거
+
+console.log("[ALLOW ORIGINS]", ORIGINS);
+
+const io = new Server(server, {
+  cors: {
+    // Socket.IO는 폴링(xhr)에서도 이 콜백을 사용한다.
+    origin(origin, callback) {
+      const clean = (origin || "").replace(/\/$/, "");
+      const allowed =
+        !origin || // 서버 내부 / curl 등의 Origin 없음
+        ORIGINS.includes("*") ||
+        ORIGINS.includes(clean);
+
+      if (allowed) {
+        if (origin) console.log("[CORS OK]", clean);
+        return callback(null, true);
+      }
+
+      console.log("[CORS BLOCK]", origin);
+      return callback(new Error("CORS blocked: " + origin));
+    },
+    methods: ["GET", "POST"],
+    credentials: false,
+  },
+});
 
 // ===== 라운드 시간(초) =====
 const ROUND_SEC = 90;
