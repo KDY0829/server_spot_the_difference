@@ -1,4 +1,3 @@
-// server/server.js
 const http = require("http");
 const { Server } = require("socket.io");
 
@@ -29,25 +28,30 @@ const LEVELS = {
   1: {
     image: "/assets/farm_twins_cropped.png",
     base: { w: 1024, h: 500 },
-    // nr(반지름 비율)을 0.06 -> 0.04 로 줄임 (더 정교하게 클릭해야 함)
+    // 요청하신 좌표 적용됨
     spots: [
-      { id: "sun_L", nx: 0.175, ny: 0.14, nr: 0.04 },
-      { id: "sun_R", nx: 0.675, ny: 0.14, nr: 0.04 },
-      { id: "truck_L", nx: 0.385, ny: 0.49, nr: 0.04 },
-      { id: "truck_R", nx: 0.885, ny: 0.49, nr: 0.04 },
-      { id: "boy_L", nx: 0.07, ny: 0.8, nr: 0.04 },
-      { id: "boy_R", nx: 0.57, ny: 0.8, nr: 0.04 },
-      { id: "cow_L", nx: 0.45, ny: 0.55, nr: 0.04 },
-      { id: "cow_R", nx: 0.95, ny: 0.55, nr: 0.04 },
-      { id: "roof_L", nx: 0.28, ny: 0.3, nr: 0.04 },
-      { id: "roof_R", nx: 0.78, ny: 0.3, nr: 0.04 },
+      { id: "spot_1", nx: 0.72, ny: 0.222, nr: 0.04 },
+      { id: "spot_2", nx: 0.791, ny: 0.216, nr: 0.04 },
+      { id: "spot_3", nx: 0.985, ny: 0.684, nr: 0.04 },
+      { id: "spot_4", nx: 0.889, ny: 0.806, nr: 0.04 },
+      { id: "spot_5", nx: 0.624, ny: 0.236, nr: 0.04 },
+      { id: "spot_6", nx: 0.829, ny: 0.784, nr: 0.04 },
+      { id: "spot_7", nx: 0.858, ny: 0.762, nr: 0.04 },
+      { id: "spot_8", nx: 0.732, ny: 0.388, nr: 0.04 },
+      { id: "spot_9", nx: 0.552, ny: 0.452, nr: 0.04 },
+      { id: "spot_10", nx: 0.832, ny: 0.612, nr: 0.04 },
+      { id: "spot_11", nx: 0.984, ny: 0.478, nr: 0.04 },
+      { id: "spot_12", nx: 0.517, ny: 0.63, nr: 0.04 },
+      { id: "spot_13", nx: 0.593, ny: 0.454, nr: 0.04 },
+      { id: "spot_14", nx: 0.679, ny: 0.298, nr: 0.04 },
+      { id: "spot_15", nx: 0.646, ny: 0.708, nr: 0.04 },
+      { id: "spot_16", nx: 0.864, ny: 0.684, nr: 0.04 },
     ],
   },
 };
 
 const rooms = new Map();
 
-// ★ 참여자 명단 생성 함수 (추가됨)
 function rosterObj(room) {
   const players = [...room.players].map((id) => ({
     id,
@@ -87,7 +91,6 @@ io.on("connection", (sock) => {
     }
     const room = rooms.get(roomId);
 
-    // 이미 있는 유저면 중복 추가 방지
     if (!room.players.has(sock.id)) {
       room.players.add(sock.id);
       room.names.set(sock.id, name || "Player");
@@ -95,12 +98,11 @@ io.on("connection", (sock) => {
       if (!room.scores.has(sock.id)) room.scores.set(sock.id, 0);
     }
 
-    // ★ roster(명단) 포함해서 전송
     const roster = rosterObj(room);
     sock.emit("joined", { roomId, you: sock.id, roster });
     sock.to(roomId).emit("peer-joined", { peer: sock.id, roster });
 
-    console.log(`[JOIN] ${name} (${sock.id}) -> ${roomId}`);
+    console.log(`[JOIN] ${name} -> ${roomId}`);
   });
 
   sock.on("signal", ({ to, data }) => {
@@ -142,25 +144,14 @@ io.on("connection", (sock) => {
   });
 
   sock.on("claim", ({ roomId, spotId }) => {
-    // undefined ID 체크
-    if (!spotId) {
-      console.log(`[FAIL] ID is undefined/null from ${sock.id}`);
-      return;
-    }
+    if (!spotId) return;
 
     const room = rooms.get(roomId);
-    if (!room) {
-      console.log(`[FAIL] Room not found: ${roomId}`);
-      return;
-    }
+    if (!room) return;
 
-    // 유효한 ID인지 확인
     const isValid =
       room.spotsData && room.spotsData.some((s) => s.id === spotId);
-    if (!isValid) {
-      console.log(`[FAIL] Invalid ID: ${spotId}`);
-      return;
-    }
+    if (!isValid) return;
 
     if (room.locked.has(spotId)) return;
 
@@ -168,7 +159,7 @@ io.on("connection", (sock) => {
     const oldScore = room.scores.get(sock.id) || 0;
     room.scores.set(sock.id, oldScore + 1);
 
-    console.log(`[HIT] ${sock.id} found ${spotId} (Score: ${oldScore + 1})`);
+    console.log(`[HIT] ${sock.id} found ${spotId}`);
 
     io.to(roomId).emit("lock", {
       spotId,
@@ -185,9 +176,8 @@ io.on("connection", (sock) => {
       if (r.players.has(sock.id)) {
         r.players.delete(sock.id);
         r.ready.delete(sock.id);
-        r.names.delete(sock.id); // 이름도 삭제
+        r.names.delete(sock.id);
 
-        // ★ 나갔을 때 명단 업데이트 전송
         const roster = rosterObj(r);
         sock.to(rid).emit("peer-left", { peerId: sock.id, roster });
       }
