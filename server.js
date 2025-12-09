@@ -1,3 +1,4 @@
+// server/server.js
 const http = require("http");
 const { Server } = require("socket.io");
 
@@ -26,25 +27,34 @@ const ROUND_SEC = 90;
 
 const LEVELS = {
   1: {
-    // ★ 파일 확장자 .png 확인 (public/assets 폴더 파일명과 일치해야 함)
     image: "/assets/farm_twins_cropped.png",
     base: { w: 1024, h: 500 },
+    // nr(반지름 비율)을 0.06 -> 0.04 로 줄임 (더 정교하게 클릭해야 함)
     spots: [
-      { id: "sun_L", nx: 0.175, ny: 0.14, nr: 0.06 },
-      { id: "sun_R", nx: 0.675, ny: 0.14, nr: 0.06 },
-      { id: "truck_L", nx: 0.385, ny: 0.49, nr: 0.06 },
-      { id: "truck_R", nx: 0.885, ny: 0.49, nr: 0.06 },
-      { id: "boy_L", nx: 0.07, ny: 0.8, nr: 0.06 },
-      { id: "boy_R", nx: 0.57, ny: 0.8, nr: 0.06 },
-      { id: "cow_L", nx: 0.45, ny: 0.55, nr: 0.06 },
-      { id: "cow_R", nx: 0.95, ny: 0.55, nr: 0.06 },
-      { id: "roof_L", nx: 0.28, ny: 0.3, nr: 0.06 },
-      { id: "roof_R", nx: 0.78, ny: 0.3, nr: 0.06 },
+      { id: "sun_L", nx: 0.175, ny: 0.14, nr: 0.04 },
+      { id: "sun_R", nx: 0.675, ny: 0.14, nr: 0.04 },
+      { id: "truck_L", nx: 0.385, ny: 0.49, nr: 0.04 },
+      { id: "truck_R", nx: 0.885, ny: 0.49, nr: 0.04 },
+      { id: "boy_L", nx: 0.07, ny: 0.8, nr: 0.04 },
+      { id: "boy_R", nx: 0.57, ny: 0.8, nr: 0.04 },
+      { id: "cow_L", nx: 0.45, ny: 0.55, nr: 0.04 },
+      { id: "cow_R", nx: 0.95, ny: 0.55, nr: 0.04 },
+      { id: "roof_L", nx: 0.28, ny: 0.3, nr: 0.04 },
+      { id: "roof_R", nx: 0.78, ny: 0.3, nr: 0.04 },
     ],
   },
 };
 
 const rooms = new Map();
+
+// ★ 참여자 명단 생성 함수 (추가됨)
+function rosterObj(room) {
+  const players = [...room.players].map((id) => ({
+    id,
+    name: room.names.get(id) || "Player",
+  }));
+  return { players };
+}
 
 function endRound(roomId, reason) {
   const room = rooms.get(roomId);
@@ -76,14 +86,21 @@ io.on("connection", (sock) => {
       console.log(`[ROOM] Created ${roomId}`);
     }
     const room = rooms.get(roomId);
-    room.players.add(sock.id);
-    room.names.set(sock.id, name || "Player");
-    sock.join(roomId);
 
-    if (!room.scores.has(sock.id)) room.scores.set(sock.id, 0);
+    // 이미 있는 유저면 중복 추가 방지
+    if (!room.players.has(sock.id)) {
+      room.players.add(sock.id);
+      room.names.set(sock.id, name || "Player");
+      sock.join(roomId);
+      if (!room.scores.has(sock.id)) room.scores.set(sock.id, 0);
+    }
 
-    sock.emit("joined", { roomId, you: sock.id });
-    console.log(`[JOIN] ${name} -> ${roomId}`);
+    // ★ roster(명단) 포함해서 전송
+    const roster = rosterObj(room);
+    sock.emit("joined", { roomId, you: sock.id, roster });
+    sock.to(roomId).emit("peer-joined", { peer: sock.id, roster });
+
+    console.log(`[JOIN] ${name} (${sock.id}) -> ${roomId}`);
   });
 
   sock.on("signal", ({ to, data }) => {
@@ -125,9 +142,15 @@ io.on("connection", (sock) => {
   });
 
   sock.on("claim", ({ roomId, spotId }) => {
+    // undefined ID 체크
+    if (!spotId) {
+      console.log(`[FAIL] ID is undefined/null from ${sock.id}`);
+      return;
+    }
+
     const room = rooms.get(roomId);
     if (!room) {
-      console.log(`[FAIL] Room not found: ${roomId} (Server restarted?)`);
+      console.log(`[FAIL] Room not found: ${roomId}`);
       return;
     }
 
@@ -139,7 +162,7 @@ io.on("connection", (sock) => {
       return;
     }
 
-    if (room.locked.has(spotId)) return; // 이미 찾음
+    if (room.locked.has(spotId)) return;
 
     room.locked.add(spotId);
     const oldScore = room.scores.get(sock.id) || 0;
@@ -162,6 +185,11 @@ io.on("connection", (sock) => {
       if (r.players.has(sock.id)) {
         r.players.delete(sock.id);
         r.ready.delete(sock.id);
+        r.names.delete(sock.id); // 이름도 삭제
+
+        // ★ 나갔을 때 명단 업데이트 전송
+        const roster = rosterObj(r);
+        sock.to(rid).emit("peer-left", { peerId: sock.id, roster });
       }
     }
   });
